@@ -1,0 +1,8 @@
+venv/
+.env
+.ebextensions/
+.elasticbeanstalk/
+.DS_Store
+supabase-mcp-server/
+.cursor/
+dev_utils/venv/
