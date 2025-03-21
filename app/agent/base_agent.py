@@ -21,8 +21,7 @@ class BaseAgent:
     def __init__(
         self,
         actions: List[Action],
-        action_handlers: Dict[str, Callable],
-        context: str = "You are an AI assistant that can perform various actions.",
+        additional_context: str = None,
         custom_examples: Optional[List[Dict[str, str]]] = None,
         provider: str = "openai",
         model: str = "gpt-4o",
@@ -33,8 +32,7 @@ class BaseAgent:
         Initialize a base agent with customizable system prompt and actions.
         
         Args:
-            actions: List of Action objects defining available actions
-            action_handlers: Dictionary mapping action names to their handler functions
+            actions: List of Action objects defining available actions with their handlers
             context: The context that defines the agent's behavior
             custom_examples: Optional list of example interactions
             provider: The model provider to use ('openai' or 'anthropic')
@@ -51,7 +49,7 @@ class BaseAgent:
             raise ValueError(f"Unsupported provider: {provider}")
             
         self.temperature = temperature
-        self.actions = action_handlers
+        self.actions = {action.name: action for action in actions}  # Store actions by name
         self.messages = []
         self.action_re = re.compile('^Action: (\w+): (.*)$')
         self.max_turns = max_turns
@@ -59,9 +57,10 @@ class BaseAgent:
         # Create the system prompt using the template
         system_prompt = create_base_prompt(
             actions=actions,
-            context=context,
+            additional_context=additional_context,
             examples=custom_examples
         )
+        # logger.info(f"System prompt:\n{system_prompt}")
         
         # Initialize with system prompt
         if system_prompt:
@@ -71,23 +70,30 @@ class BaseAgent:
                 "type": "text"
             })
     
-    def add_message(self, message: str | Dict[str, Any] | List[Dict[str, Any]]) -> None:
+    def add_message(self, message: str | Dict[str, Any] | Message | List[Dict[str, Any] | Message]) -> None:
         """Add a message or list of messages to the conversation history."""
         if isinstance(message, list):
             for msg in message:
-                if 'role' in msg and 'content' in msg and 'type' in msg:
+                if isinstance(msg, Message):
+                    # Convert Pydantic model to dict
+                    self.messages.append(msg.dict())
+                elif isinstance(msg, dict) and 'role' in msg and 'content' in msg and 'type' in msg:
                     self.messages.append(msg)
                 else:
                     raise ValueError("Each message must contain 'role', 'content', and 'type'.")
+        elif isinstance(message, Message):
+            # Convert Pydantic model to dict
+            self.messages.append(message.dict())
         elif isinstance(message, dict):
             if 'role' in message and 'content' in message and 'type' in message:
                 self.messages.append(message)
             else:
                 raise ValueError("Message must contain 'role', 'content', and 'type'.")
         else:
+            # Handle string input
             self.messages.append({
                 "role": "user",
-                "content": message,
+                "content": str(message),
                 "type": "text"
             })
 
@@ -115,23 +121,23 @@ class BaseAgent:
                 if line.lower().startswith('observation:'):
                     response_start = i + 1
             response = '\n'.join(response_lines[response_start:]).strip()
-            logger.info(f"No actions found, returning response: {response}")
             return response, None
             
-        action, action_input = actions[0].groups()
-        logger.info(f"Processing action: {action} with input: {action_input}")
+        action_name, action_input = actions[0].groups()
+        logger.info(f"Processing action: {action_name} with input: {action_input}")
         
-        if action not in self.actions:
-            error_msg = f"Unknown action: {action}. Available actions: {', '.join(self.actions.keys())}"
+        if action_name not in self.actions:
+            error_msg = f"Unknown action: {action_name}. Available actions: {', '.join(self.actions.keys())}"
             logger.error(error_msg)
             return error_msg, None
             
         try:
-            observation = self.actions[action](action_input)
+            action = self.actions[action_name]
+            observation = action.handler(action_input)
             logger.info(f"Action executed successfully. Observation: {observation}")
             return None, f"Observation: {observation}"
         except Exception as e:
-            error_msg = f"Error executing {action}: {str(e)}"
+            error_msg = f"Error executing {action_name}: {str(e)}"
             logger.error(error_msg)
             return error_msg, None
 
@@ -161,6 +167,8 @@ class BaseAgent:
                 })
                 
                 response, observation = self.process_actions(result)
+                logger.info(f"Response: {response}")
+                logger.info(f"Observation: {observation}")
                 if response is not None:
                     logger.info(f"Query complete with response: {response}")
                     return response

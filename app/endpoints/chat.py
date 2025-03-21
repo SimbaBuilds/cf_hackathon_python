@@ -19,8 +19,6 @@ async def chat_endpoint(request: ChatRequest, user_id: UUID = None, db=None) -> 
             messages=request.messages,
             user_id=user_id,
             db=db,
-            provider=request.provider,
-            model=request.model
         )
         
         if not response:

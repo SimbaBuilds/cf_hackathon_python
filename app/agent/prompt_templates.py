@@ -23,7 +23,7 @@ def format_action(action: Action) -> str:
 
 def create_base_prompt(
     actions: List[Action],
-    context: str,
+    additional_context: str,
     examples: Optional[Union[str, List[Union[str, Dict[str, str]]]]] = None
 ) -> str:
     """
@@ -40,29 +40,32 @@ def create_base_prompt(
     # Core prompt structure as a formatted multiline string
     base_prompt = f"""=== Context ===
 You are an AI agent designed to interact with human users and invoke actions when necessary. Your role is to:
-1. Review the request given context
-2. Invoke specific actions when required
-3. Provide responses to the human user
+1. Review the conversation and the most recent message from the user
+2. Invoke available actions if necessary 
+3. Provide a response to the human user
 
-Additional Context: {context}
+Additional Context: {additional_context}
 
 === Thought Process ===
 You operate in a loop of phases: Thought, Action, and Observation.
-At the end of the loop you will output a Response.
 
-1. Analyze the current situation and determine how to proceed
-2. If an action is needed, request it using exactly this format: Action: <action_name>: <parameters>.  If multiple actions are needed, invoke only the one that needs to be done next.
+1. Analyze the current state of the conversation and determine how to proceed
+2. If an action is needed, invoke it using exactly this format: Action: <action_name>: <parameters>.  If multiple actions are needed, invoke only the one that needs to be done next.
 3. View the results of the action
-4. If more actions are needed, repeat the process. If not, provide a final response to the human user in exactly this format:
+4. If more actions are needed, repeat the process by invoking the next action. If not, provide a final response to the human user in exactly this format:
 Response to Client: <response>
+
+Note: the human user will not see your Thought Process.  They will only see the text after Response to Client: 
 """
 
     # Convert base prompt to list of lines
     prompt_sections = base_prompt.split('\n')
 
-    # Add available actions section
-    prompt_sections.extend([
-        "",
+    
+    if actions:
+        # Add available actions section
+        prompt_sections.extend([
+            "",
         "=== Available Actions ===",
         "",
         "\n\n".join(format_action(action) for action in actions),
@@ -73,7 +76,7 @@ Response to Client: <response>
     if examples:
         prompt_sections.extend([
             "",
-            "=== Examples ===",
+            "=== Examples of Full Flow ===",
             "",
         ])
         
@@ -82,7 +85,8 @@ Response to Client: <response>
         else:
             # Format the list of examples
             formatted_examples = []
-            for example in examples:
+            for i, example in enumerate(examples):
+                formatted_examples.append(f"Example {i+1}:")
                 if isinstance(example, str):
                     formatted_examples.append(example)
                 else:
@@ -98,28 +102,3 @@ Response to Client: <response>
     # Combine all sections, filtering out empty strings
     return "\n".join(section for section in prompt_sections if section)
 
-# Example usage:
-example_web_search_action = Action(
-    name="web_search",
-    description="Search the web for current information",
-    parameters={
-        "query": {
-            "type": "string",
-            "description": "The search query"
-        }
-    },
-    returns="Text snippets from web search results",
-    example="Action: web_search: Current inflation rate in United States 2025"
-)
-
-# Example with multiline string format
-example_prompt = create_base_prompt(
-    actions=[example_web_search_action],
-    context="This agent helps users find current information from the web.",
-    examples="""State: The user is asking about the Trump administration's recent use of the 1787 Alien Enemies Act, and they are concerned about executive overreach.
-Thought: This requires current information from news sources so I should invoke an action to search the web.
-Action: web_search: Trump administration recent use of the 1787 Alien Enemies Act
-Observation: The administration recently declared Tren De Aragua a foreign terrorist organization and invoked the act to deport them.  A local court has ruled that the administration's actions are unconstitutional and ordered them to stop, but the administration has refused to comply.
-Response to Client: The administration recently declared Tren De Aragua a foreign terrorist organization and invoked the act to deport them.  This situation highlights the nuanced relationship between the executive and judicial branches of the government and the need for better delineation of powers.
-"""
-) 
