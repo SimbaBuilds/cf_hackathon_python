@@ -1,20 +1,27 @@
-from os import getenv
 from fastapi import HTTPException, APIRouter
 from uuid import UUID
-from app.agents.agent_schemas import ChatRequest, ChatResponse
-from app.agents.head_agent import query_agent
-
+from app.agent.agent_schemas import ChatRequest, ChatResponse
+from app.utils.chat import get_chat_response
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat_endpoint(request: ChatRequest, user_id: UUID, db=None) -> ChatResponse:
+async def chat_endpoint(request: ChatRequest, user_id: UUID = None, db=None) -> ChatResponse:
     try:
-        # Convert messages to the format expected by query_agent
-        messages = request.messages[0].content if request.messages else ""
+        logger.info(f"Received chat request with {len(request.messages)} messages")
         
-        # Call query_agent instead of OpenAI
-        response, observation = query_agent(messages, user_id, db)
+        # Get response using the utility function, passing all messages and settings
+        response = get_chat_response(
+            messages=request.messages,
+            user_id=user_id,
+            db=db,
+            provider=request.provider,
+            model=request.model
+        )
         
         if not response:
             raise HTTPException(

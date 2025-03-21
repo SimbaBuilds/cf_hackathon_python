@@ -49,4 +49,4 @@ if __name__ == "__main__":
 
 
 
-#python app/main.py
+#python -m app.main
