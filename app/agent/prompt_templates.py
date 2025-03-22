@@ -1,6 +1,6 @@
 from typing import Dict, Any, List, Optional, Union
 from .agent_schemas import Action
-
+from datetime import datetime
 def format_action(action: Action) -> str:
     """Format a single action into a string description."""
     action_str = [
@@ -23,7 +23,7 @@ def format_action(action: Action) -> str:
 
 def create_base_prompt(
     actions: List[Action],
-    additional_context: str,
+    additional_context: str = "No additional context",
     examples: Optional[Union[str, List[Union[str, Dict[str, str]]]]] = None
 ) -> str:
     """
@@ -44,6 +44,7 @@ You are an AI agent designed to interact with human users and invoke actions whe
 2. Invoke available actions if necessary 
 3. Provide a response to the human user
 
+Note: The current date and time is {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 Additional Context: {additional_context}
 
 === Thought Process ===
