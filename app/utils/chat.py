@@ -79,6 +79,7 @@ Response to Client: The administration recently declared Tren De Aragua a foreig
     NO_ACTION_EXAMPLE = """No Action Example:
 State: The user is greeting me.
 Thought: This is a greeting and no action is needed.
+Action: none: No action needed
 Observation: [No action taken]
 Response to Client: Hello! How can I help you today?
 """
@@ -107,7 +108,7 @@ Response to Client: Hello! How can I help you today?
             temperature=1.0,
             provider="openai",
             model="gpt-4o",
-            max_turns=3
+            max_turns=4
         )
         logger.debug("Agent initialized successfully")
         
@@ -120,16 +121,17 @@ Response to Client: Hello! How can I help you today?
         else:
             response_text = full_response
             
-        # Extract only the response part - case insensitive matching but preserve original case
+        # If the response is already processed (no prefix), return it directly
+        if not response_text.lower().startswith('thought:') and not response_text.lower().startswith('action:'):
+            return response_text
+            
+        # Otherwise, extract the response part after "Response to Client:"
         response_marker = "response to client:"
         if response_marker in response_text.lower():
-            # Find the actual index in the original string where the response starts
             marker_start = response_text.lower().find(response_marker)
-            response = response_text[marker_start + len(response_marker):].strip()
-            logger.info("Successfully processed chat response")
-            return response
+            return response_text[marker_start + len(response_marker):].strip()
         
-        # Fallback in case the expected format isn't found
+        # Fallback only if we have a malformed response
         logger.warning("Response format not as expected, returning full response")
         logger.info(f"Full response:\n {response_text}")
         return response_text

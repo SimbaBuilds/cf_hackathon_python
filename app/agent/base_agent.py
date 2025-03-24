@@ -49,18 +49,29 @@ class BaseAgent:
             raise ValueError(f"Unsupported provider: {provider}")
             
         self.temperature = temperature
-        self.actions = {action.name: action for action in actions}  # Store actions by name
+        
+        # Add the "none" action to the list of actions
+        none_action = Action(
+            name="none",
+            description="No action needed",
+            parameters={},
+            returns="No action taken",
+            handler=lambda _: "No action taken"
+        )
+        all_actions = [none_action] + actions
+        self.actions = {action.name: action for action in all_actions}  # Store actions by name
+        
         self.messages = []
         self.action_re = re.compile('^Action: (\w+): (.*)$')
         self.max_turns = max_turns
         
         # Create the system prompt using the template
         system_prompt = create_base_prompt(
-            actions=actions,
+            actions=all_actions,
             additional_context=additional_context,
             examples=custom_examples
         )
-        # logger.info(f"System prompt:\n{system_prompt}")
+        logger.info(f"System prompt:\n{system_prompt}")
         
         # Initialize with system prompt
         if system_prompt:
@@ -107,39 +118,87 @@ class BaseAgent:
     def process_actions(self, result: str) -> tuple[Optional[str], Optional[str]]:
         """Process any actions in the model's response."""
         logger.info("Processing actions from response...")
-        actions = [
-            self.action_re.match(a)
-            for a in result.split('\n')
-            if self.action_re.match(a)
-        ]
         
-        if not actions:
-            # Extract the response part (everything after the last Observation) - case insensitive
-            response_lines = result.split('\n')
-            response_start = 0
-            for i, line in enumerate(response_lines):
-                if line.lower().startswith('observation:'):
-                    response_start = i + 1
-            response = '\n'.join(response_lines[response_start:]).strip()
-            return response, None
-            
-        action_name, action_input = actions[0].groups()
-        logger.info(f"Processing action: {action_name} with input: {action_input}")
+        # Extract thought, action, observation and response using regex
+        thought_match = re.search(r'^Thought: (.*)$', result, re.MULTILINE)
+        action_match = re.search(r'^Action: (\w+): (.*)$', result, re.MULTILINE)
+        observation_match = re.search(r'^Observation: (.*)$', result, re.MULTILINE)
+        response_match = re.search(r'^Response to Client: (.*)$', result, re.MULTILINE)
         
-        if action_name not in self.actions:
-            error_msg = f"Unknown action: {action_name}. Available actions: {', '.join(self.actions.keys())}"
-            logger.error(error_msg)
-            return error_msg, None
+        # If we only have a Response to Client, this is a direct response
+        if response_match and not any([thought_match, action_match, observation_match]):
+            logger.info("Processing direct response without Thought/Action/Observation")
+            return response_match.group(1).strip(), None
+        
+        # If we have a complete response (all fields), process it normally
+        if all([thought_match, action_match, observation_match, response_match]):
+            action_name, action_input = action_match.groups()
+            logger.info(f"Processing complete response with action: {action_name}")
             
-        try:
-            action = self.actions[action_name]
-            observation = action.handler(action_input)
-            logger.info(f"Action executed successfully. Observation: {observation}")
-            return None, f"Observation: {observation}"
-        except Exception as e:
-            error_msg = f"Error executing {action_name}: {str(e)}"
-            logger.error(error_msg)
-            return error_msg, None
+            if action_name not in self.actions:
+                error_msg = f"Unknown action: {action_name}. Available actions: {', '.join(self.actions.keys())}"
+                logger.error(error_msg)
+                return error_msg, None
+                
+            try:
+                action = self.actions[action_name]
+                observation = action.handler(action_input)
+                logger.info(f"Action executed successfully. Observation: {observation}")
+                
+                # If this was the final response (no more actions needed), return the Response to Client
+                if action_name == "none":
+                    return response_match.group(1).strip(), None
+                
+                # Otherwise, return None to continue the conversation loop with the observation
+                return None, f"Observation: {observation}"
+            except Exception as e:
+                error_msg = f"Error executing {action_name}: {str(e)}"
+                logger.error(error_msg)
+                return error_msg, None
+        
+        # If we have a thought and action but no observation/response, this is a mid-process response
+        if thought_match and action_match and not observation_match and not response_match:
+            action_name, action_input = action_match.groups()
+            logger.info(f"Processing mid-process response with action: {action_name}")
+            
+            if action_name not in self.actions:
+                error_msg = f"Unknown action: {action_name}. Available actions: {', '.join(self.actions.keys())}"
+                logger.error(error_msg)
+                return error_msg, None
+                
+            try:
+                action = self.actions[action_name]
+                observation = action.handler(action_input)
+                logger.info(f"Action executed successfully. Observation: {observation}")
+                return None, f"Observation: {observation}"
+            except Exception as e:
+                error_msg = f"Error executing {action_name}: {str(e)}"
+                logger.error(error_msg)
+                return error_msg, None
+        
+        # If we have a thought but no action, this is an incomplete response
+        if thought_match and not action_match:
+            logger.error("Response contains Thought but no Action")
+            return "Error: Response missing Action", None
+            
+        # If we have an action but no thought, this is an invalid response
+        if action_match and not thought_match:
+            logger.error("Response contains Action but no Thought")
+            return "Error: Response missing Thought", None
+            
+        # If we have an observation but no thought/action, this is an invalid response
+        if observation_match and not (thought_match and action_match):
+            logger.error("Response contains Observation but missing Thought or Action")
+            return "Error: Response missing Thought or Action", None
+            
+        # If we have a response but no thought/action/observation, this is an invalid response
+        if response_match and not (thought_match and action_match and observation_match):
+            logger.error("Response contains Response to Client but missing required components")
+            return "Error: Response missing required components", None
+            
+        # If we have no recognizable components, this is an invalid response
+        logger.error("Response contains no recognizable components")
+        return "Error: Response contains no recognizable components", None
 
     def query(self, messages: List[Message], user_id: UUID, db) -> Tuple[str, Optional[str]]:
         """

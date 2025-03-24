@@ -48,30 +48,42 @@ Note: The current date and time is {datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 Additional Context: {additional_context}
 
 === Thought Process ===
-You operate in a loop of phases: Thought, Action, and Observation.
+You must follow these example structures in your responses:
 
-1. Analyze the current state of the conversation and determine how to proceed
-2. If an action is needed, invoke it using exactly this format: Action: <action_name>: <parameters>.  If multiple actions are needed, invoke only the one that needs to be done next.
-3. View the results of the action
-4. If more actions are needed, repeat the process by invoking the next action. If not, provide a final response to the human user in exactly this format:
-Response to Client: <response>
+1. Thought: Explain your reasoning about what to do next
+2. Action: Either invoke an action using exactly this format: Action: <action_name>: <parameters>
+   OR if no action is needed, use: Action: none: No action needed
+If an action is needed, stop your output here and you will be called again with the result of the action.
+3. Observation: Either the result of the action, or "[No action taken]" if no action was needed
+4. Response to Client: Your final response to the human user
 
-Note: the human user will not see your Thought Process.  They will only see the text after Response to Client: 
+Example structure:
+Thought: The user is asking about X, which requires Y action
+Action: Y: <parameters>
+Observation: <result of Y action>
+Response to Client: <final response>
+
+OR when no action is needed:
+Thought: This is a simple greeting that doesn't require any action
+Action: none: No action needed
+Observation: [No action taken]
+Response to Client: Hello! How can I help you today?
+
+Note: the human user will not see your Thought Process. They will only see the text after Response to Client:
 """
 
     # Convert base prompt to list of lines
     prompt_sections = base_prompt.split('\n')
 
-    
     if actions:
         # Add available actions section
         prompt_sections.extend([
             "",
-        "=== Available Actions ===",
-        "",
-        "\n\n".join(format_action(action) for action in actions),
-        "",
-    ])
+            "=== Available Actions ===",
+            "",
+            "\n\n".join(format_action(action) for action in actions),
+            "",
+        ])
 
     # Add examples if provided
     if examples:
