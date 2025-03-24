@@ -200,7 +200,7 @@ class BaseAgent:
         logger.error("Response contains no recognizable components")
         return "Error: Response contains no recognizable components", None
 
-    def query(self, messages: List[Message], user_id: UUID, db) -> Tuple[str, Optional[str]]:
+    def query(self, messages: List[Message], user_id: UUID, db) -> str:
         """
         Process a message through the agent, handling multiple turns of action/observation.
         
@@ -210,14 +210,14 @@ class BaseAgent:
             db: Database connection object
             
         Returns:
-            A tuple containing (response, observation) where observation may be None
+            The final response string to send to the client
         """
         try:
             logger.info(f"Starting query for user {user_id}")
             self.add_message(messages)
             
-            for turn in range(self.max_turns):
-                logger.info(f"Processing turn {turn + 1}/{self.max_turns}")
+            action_count = 0
+            while True:
                 result = self.execute()
                 self.messages.append({
                     "role": "assistant",
@@ -228,21 +228,31 @@ class BaseAgent:
                 response, observation = self.process_actions(result)
                 logger.info(f"Response: {response}")
                 logger.info(f"Observation: {observation}")
+                
+                # If we got a response, return it
                 if response is not None:
                     logger.info(f"Query complete with response: {response}")
                     return response
                     
+                # If we got an observation, we executed an action
                 if observation is not None:
+                    action_count += 1
+                    logger.info(f"Action {action_count}/{self.max_turns} executed")
+                    
+                    if action_count >= self.max_turns:
+                        logger.warning("Max actions reached without final response")
+                        return "Max actions reached without final response"
+                        
                     logger.info(f"Adding observation to messages: {observation}")
                     self.add_message(observation)
                 else:
                     logger.info("No observation to process, ending query")
                     break
                     
-            logger.warning("Max turns reached without final response")
-            return "Max turns reached without final response", None
+            logger.warning("Query ended without final response")
+            return "Query ended without final response"
             
         except Exception as e:
             error_msg = f"Error in agent loop: {str(e)}"
             logger.error(error_msg)
-            return error_msg, None 
+            return error_msg 

@@ -58,8 +58,6 @@ def get_chat_response(messages: List[Message], user_id: UUID = None, db=None) ->
         messages: List of chat messages
         user_id: Optional user ID for tracking
         db: Optional database connection
-        provider: The model provider to use
-        model: The specific model to use
         
     Returns:
         The agent's response string
@@ -83,7 +81,6 @@ Action: none: No action needed
 Observation: [No action taken]
 Response to Client: Hello! How can I help you today?
 """
-
 
     # Define the web search action
     web_search_action = Action(
@@ -112,29 +109,9 @@ Response to Client: Hello! How can I help you today?
         )
         logger.debug("Agent initialized successfully")
         
-        full_response = head_agent.query(messages, user_id, db)
-        logger.debug(f"Raw agent response: {full_response}")
-        
-        # Extract the response part from the tuple
-        if isinstance(full_response, tuple):
-            response_text = full_response[0]
-        else:
-            response_text = full_response
-            
-        # If the response is already processed (no prefix), return it directly
-        if not response_text.lower().startswith('thought:') and not response_text.lower().startswith('action:'):
-            return response_text
-            
-        # Otherwise, extract the response part after "Response to Client:"
-        response_marker = "response to client:"
-        if response_marker in response_text.lower():
-            marker_start = response_text.lower().find(response_marker)
-            return response_text[marker_start + len(response_marker):].strip()
-        
-        # Fallback only if we have a malformed response
-        logger.warning("Response format not as expected, returning full response")
-        logger.info(f"Full response:\n {response_text}")
-        return response_text
+        response = head_agent.query(messages, user_id, db)
+        logger.info("Successfully processed chat response")
+        return response
         
     except Exception as e:
         logger.error(f"Error processing chat request: {str(e)}", exc_info=True)
